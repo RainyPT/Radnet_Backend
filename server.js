@@ -18,7 +18,7 @@ dbase.connect();
 dotenv.config();
 app.use(
   cors({
-    origin: "http://localhost:3000",
+    origin: "http://161.230.225.30:3000",
     credentials: true,
     methods: ["GET", "POST"],
   })
@@ -29,58 +29,59 @@ app.use(express.urlencoded({ extended: true }));
 app.post("/login", (req, res) => {
   let email = req.body.email;
   let password = req.body.password;
-  let doesUserExist = "SELECT * FROM utilizadores WHERE Email='" + email + "';";
-  dbase.query(doesUserExist, (err, resultDB1) => {
-    if (err) throw error;
-    if (resultDB1.length > 0) {
-      bcrypt.compare(password, resultDB1[0].Password, (err, resultComp) => {
-        if (err) throw err;
-        if (resultComp) {
-          const ID = resultDB1[0].IDU;
-          const token = jwt.sign({ ID }, process.env.SECRET_KEY_JWT, {
-            expiresIn: 86400,
-          });
-          res.send({
-            ack: 1,
-            user: resultDB1[0].Email,
-            token: token,
-          });
-        } else {
-          res.send({
-            ack: 0,
-            message: "Password errada!",
-          });
-        }
-      });
-    } else {
-      res.send({
-        message: "Utilizador não existe",
-        ack: 0,
-      });
+  dbase.query(
+    "SELECT * FROM utilizadores WHERE Email=?",
+    [email],
+    (err, resultDB1) => {
+      if (err) throw error;
+      if (resultDB1.length > 0) {
+        bcrypt.compare(password, resultDB1[0].Password, (err, resultComp) => {
+          if (err) throw err;
+          if (resultComp) {
+            const ID = resultDB1[0].IDU;
+            const token = jwt.sign({ ID }, process.env.SECRET_KEY_JWT, {
+              expiresIn: "1 day",
+            });
+            res.send({
+              ack: 1,
+              user: resultDB1[0].Email,
+              token: token,
+            });
+          } else {
+            res.send({
+              ack: 0,
+              message: "Wrong Credentials",
+            });
+          }
+        });
+      } else {
+        res.send({
+          ack: 0,
+          message: "Wrong Credentials",
+        });
+      }
     }
-  });
+  );
 });
 app.post("/register", (req, res) => {
   let email = req.body.email;
   let password = req.body.password;
   dbase.query(
-    "SELECT Email FROM utilizadores WHERE Email='" + email + "'",
+    "SELECT Email FROM utilizadores WHERE Email=?",
+    [email],
     (err, resdb1) => {
       if (err) throw err;
       if (resdb1.length === 0) {
-        if (err) throw err;
-        bcrypt.hash(password, 10, function (err, hash) {
+        bcrypt.hash(password, 10, (err, hash) => {
           if (err) throw err;
-          let insertUserSQLString =
-            "INSERT INTO utilizadores (Email,Password) Values ('" +
-            email +
-            "','" +
-            hash +
-            "')";
-          dbase.query(insertUserSQLString, (err, resultDB) => {
-            if (err) throw err;
-            res.send({ ack: 1 });
-          });
+          dbase.query(
+            "INSERT INTO utilizadores (Email,Password) Values (?,?)",
+            [email, hash],
+            (err, resultDB) => {
+              if (err) throw err;
+              res.send({ ack: 1 });
+            }
+          );
         });
       } else {
         res.send({ ack: 0, message: "Conta já existe com esse email!" });
@@ -89,12 +90,13 @@ app.post("/register", (req, res) => {
   );
 });
 const verifyJWT = (req, res, next) => {
-  const token = req.headers["x-access-token"];
+  var token = req.headers.authorization.split(" ")[1];
   if (!token) {
     res.status(401).json({ message: "Nenhum token recebido!" });
   } else {
     jwt.verify(token, process.env.SECRET_KEY_JWT, (err, decoded) => {
       if (err) {
+        console.log(err);
         res.status(401).json({ auth: false, message: "Não autorizado!" });
       } else {
         req.userId = decoded.id;
@@ -105,11 +107,26 @@ const verifyJWT = (req, res, next) => {
 };
 
 //ROUTES PROTEGIDAS
-app.get("/getCities", verifyJWT, (req, res) => {
-  dbase.query("SELECT * from cidades", (err, resDB) => {
+app.get("/getCities/:data", verifyJWT, (req, res) => {
+  let data = req.params.data;
+  dbase.query("SELECT * from localizacoes", (err, resDB) => {
     if (err) throw err;
+    console.log(data);
     res.send(resDB);
   });
+});
+app.post("/addCity", verifyJWT, (req, res) => {
+  let Nome = req.body.Nome;
+  let X = req.body.X;
+  let Y = req.body.Y;
+  dbase.query(
+    "Insert Into localizacoes (Nome,X,Y) VALUES(?,?,?) ",
+    [Nome, X, Y],
+    (err, resDB) => {
+      if (err) throw err;
+      res.status(200).json({ ack: 1 });
+    }
+  );
 });
 app.listen(port, () => {
   console.log(`Example app listening at http://localhost:${port}`);
